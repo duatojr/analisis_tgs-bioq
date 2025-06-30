@@ -536,7 +536,7 @@ Resultados GGT
 ```{r}
 todos_los_analisis2$GGT #Permite acceder a los resultados del análisis específico para la variable bioquímica "GGT"
 ```
-
+harryj-diddA8-fyfcyf
 Resultados CPK
 ```{r}
 todos_los_analisis2$CPK #Permite acceder a los resultados del análisis específico para la variable bioquímica "CPK"
