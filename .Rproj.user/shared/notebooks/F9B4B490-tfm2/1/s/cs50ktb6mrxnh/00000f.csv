@@ -1,0 +1,58 @@
+"0","# Variable TGS fija"
+"0","tgs_fija <- ""%TGS muscular"""
+"0",""
+"0","# Lista de nombres base de las variables bioquímicas a analizar"
+"0","variables_bioquimicas_a_iterar <- c(""FERRIT"", ""FE"", ""CPK"", ""LDH"", ""CREATIN"")"
+"0",""
+"0","# Bucle con lapply"
+"0","# Esta lista almacenará todos los resultados, cada elemento será el resultado de un análisis"
+"0","todos_los_analisis <- lapply(variables_bioquimicas_a_iterar, function(nombre_base_bio) {"
+"0","  "
+"0","  cat(paste0(""\n--- Iniciando análisis para: TGS='"", tgs_fija, ""' y Bioquímica Base='"", nombre_base_bio, ""' ---\n""))"
+"0","  "
+"0","  # Usamos tryCatch para que si una variable da error, el bucle continúe con las demás"
+"0","  resultado_para_esta_bio <- tryCatch({"
+"0","    analizar_bio_tgs_jugador("
+"0","      datos = datos,"
+"0","      columna_sujeto_id = ""SUJETO"","
+"0","      tgs_variable_nombre = tgs_fija,"
+"0","      bioquimica_base_nombre = nombre_base_bio"
+"0","    )"
+"0","  }, error = function(e) {"
+"0","    # Si ocurre un error, lo notificamos y devolvemos un mensaje de error o NULL"
+"0","    cat(paste0(""ERROR al procesar '"", nombre_base_bio, ""': "", e$message, ""\n""))"
+"0","    return(list(error = TRUE, mensaje_error = e$message, variable_bio = nombre_base_bio)) # Devolvemos el error"
+"0","  })"
+"0","  "
+"0","  return(resultado_para_esta_bio)"
+"0","})"
+"1","
+--- Iniciando análisis para: TGS='%TGS muscular' y Bioquímica Base='FERRIT' ---
+"
+"2","G2;H2;Warningh: [38;5;232mUsing `size` aesthetic for lines was deprecated in ggplot2 3.4.0.
+[36mℹ[38;5;232m Please use `linewidth` instead.
+[90mThis warning is displayed once every 8 hours.[38;5;232m
+[90mCall `lifecycle::last_lifecycle_]8;;ide:run:warnings()warnings()]8;;` to see where this warning was generated.[38;5;232m[39mg
+"
+"1","
+--- Iniciando análisis para: TGS='%TGS muscular' y Bioquímica Base='FE' ---
+"
+"2","G3;Setting direction: controls < cases
+g"
+"2","G3;Setting direction: controls < cases
+g"
+"1","
+--- Iniciando análisis para: TGS='%TGS muscular' y Bioquímica Base='CPK' ---
+"
+"2","G3;Setting direction: controls > cases
+g"
+"2","G3;Setting direction: controls > cases
+g"
+"1","
+--- Iniciando análisis para: TGS='%TGS muscular' y Bioquímica Base='LDH' ---
+
+--- Iniciando análisis para: TGS='%TGS muscular' y Bioquímica Base='CREATIN' ---
+"
+"0","# --- PASO 3: Nombrar los elementos de la lista de resultados ---"
+"0","# Esto hace más fácil acceder a los resultados de una variable bioquímica específica por su nombre."
+"0","names(todos_los_analisis) <- variables_bioquimicas_a_iterar"

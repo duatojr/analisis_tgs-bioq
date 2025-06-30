@@ -1,0 +1,568 @@
+Función
+```{r}
+library(readxl) # Carga la librería readxl para leer archivos Excel.
+library(dplyr) # Carga la librería dplyr para manipulación de datos.
+library(ggplot2) # Carga la librería ggplot2 para la creación de gráficos.
+library(tidyr) # Carga la librería tidyr para transformar datos (ej. de ancho a largo).
+library(skimr) # Carga la librería skimr para resúmenes de datos concisos (no usada en la función, pero útil para exploración).
+library(GGally) # Carga la librería GGally para crear matrices de gráficos (no usada directamente, pero útil para exploración de pares).
+library(corrplot) # Carga la librería corrplot para visualizar matrices de correlación (ggcorrplot es preferido aquí).
+library(stringr) # Carga la librería stringr para manipulación de cadenas de texto.
+library(tidyverse) # Carga el meta-paquete tidyverse, que incluye dplyr, ggplot2, tidyr, readr, purrr, stringr, forcats.
+library(FactoMineR) # Carga la librería FactoMineR para análisis multivariante (no usada en la función).
+library(factoextra) # Carga la librería factoextra para visualizar resultados de análisis multivariante (no usada en la función).
+library(plotly) # Carga la librería plotly para gráficos interactivos (no usada en la función).
+library(ggcorrplot) # Carga la librería ggcorrplot para visualizar matrices de correlación con ggplot2.
+library(pROC) # Carga la librería pROC para generar y analizar curvas ROC. Asegúrate de instalarla: install.packages("pROC").
+
+# Carga los datos desde un archivo Excel. La ruta del archivo es específica del sistema local.
+datos <- read_excel("/Users/jorge/Desktop/Estudios/UFV/TFM/TFM/datos_sporting_completos.xlsx")
+# Imprime las primeras filas del dataframe para una vista previa.
+print(datos)
+
+# Define una función llamada 'analizar_bio_tgs_jugador' que toma un dataframe y nombres de columnas como entrada.
+analizar_bio_tgs_jugador <- function(datos,
+                                     columna_sujeto_id,
+                                     tgs_variable_nombre,
+                                     bioquimica_base_nombre) {
+
+  # --- 1. Validación de Entradas y Preparación de Nombres de Columnas ---
+  # Verifica si 'datos' es un data frame; si no, detiene la ejecución y muestra un error.
+  if (!is.data.frame(datos)) {
+    stop("El primer argumento 'datos' debe ser un data frame.")
+  }
+  # Valida que 'columna_sujeto_id' sea una cadena de texto, tenga una longitud de 1 y exista en las columnas de 'datos'.
+  if (!is.character(columna_sujeto_id) || length(columna_sujeto_id) != 1 || !(columna_sujeto_id %in% colnames(datos))) {
+    stop(paste0("El argumento 'columna_sujeto_id' ('", columna_sujeto_id, "') debe ser un nombre de columna válido en 'datos'."))
+  }
+  # Convierte la columna de ID del sujeto a tipo factor para asegurar un manejo adecuado en los gráficos.
+  datos[[columna_sujeto_id]] <- as.factor(datos[[columna_sujeto_id]])
+
+  # Valida que 'tgs_variable_nombre' sea una cadena de texto, tenga una longitud de 1 y exista en las columnas de 'datos'.
+  if (!is.character(tgs_variable_nombre) || length(tgs_variable_nombre) != 1 || !(tgs_variable_nombre %in% colnames(datos))) {
+    stop(paste0("'tgs_variable_nombre' ('", tgs_variable_nombre, "') debe ser un nombre de columna válido en 'datos'."))
+  }
+  # Emite una advertencia si la columna TGS no es numérica, ya que podría afectar la escala de color en los gráficos.
+  if (!is.numeric(datos[[tgs_variable_nombre]])) {
+      warning(paste0("La columna TGS '", tgs_variable_nombre, "' no es numérica. Se intentará usar para colorear, pero una escala continua podría no ser apropiada."))
+  }
+
+  # Valida que 'bioquimica_base_nombre' sea una cadena de texto y tenga una longitud de 1.
+  if (!is.character(bioquimica_base_nombre) || length(bioquimica_base_nombre) != 1) {
+    stop("'bioquimica_base_nombre' debe ser una cadena de texto con el nombre base de la variable bioquímica.")
+  }
+
+  # Crea una lista de nombres de columnas para las 6 tomas bioquímicas (ej. "Creatina1º", "Creatina2º", etc.).
+  nombres_bio_tomas <- paste0(bioquimica_base_nombre, 1:6, "º")
+  # Itera sobre los nombres de las tomas bioquímicas para validar su existencia y tipo numérico.
+  for (col_bio in nombres_bio_tomas) {
+    # Verifica si la columna bioquímica existe en el dataframe.
+    if (!(col_bio %in% colnames(datos))) {
+      stop(paste0("La columna bioquímica '", col_bio, "' no se encuentra en el data frame."))
+    }
+    # Verifica si la columna bioquímica es numérica.
+    if (!is.numeric(datos[[col_bio]])) {
+      stop(paste0("La columna bioquímica '", col_bio, "' debe ser numérica para el análisis."))
+    }
+  }
+
+  # Inicializa una lista para almacenar los resultados de correlaciones individuales.
+  resultados_individuales_lista <- list()
+  # Itera sobre cada una de las 6 tomas bioquímicas.
+  for (i in 1:6) {
+    col_bio_actual <- nombres_bio_tomas[i] # Obtiene el nombre de la columna bioquímica actual.
+    # Intenta calcular la correlación de Pearson entre la variable TGS y la variable bioquímica actual.
+    test_resultado <- tryCatch({
+      cor.test(datos[[tgs_variable_nombre]], datos[[col_bio_actual]],
+               method = "pearson", use = "pairwise.complete.obs") # 'pairwise.complete.obs' maneja NAs eliminando pares.
+    }, error = function(e) {
+      # Si ocurre un error, emite una advertencia y devuelve NA para los resultados.
+      warning(paste("No se pudo calcular la correlación entre", tgs_variable_nombre, "y", col_bio_actual, ":", e$message))
+      return(list(estimate = NA, p.value = NA))
+    })
+    # Almacena los resultados de la correlación en un dataframe temporal.
+    resultados_individuales_lista[[i]] <- data.frame(
+      Variable_TGS = tgs_variable_nombre,
+      Variable_Bioquimica_Toma = col_bio_actual,
+      Toma = i,
+      Coeficiente_Correlacion = ifelse(is.null(test_resultado$estimate), NA, test_resultado$estimate[[1]]),
+      P_Valor = ifelse(is.null(test_resultado$p.value), NA, test_resultado$p.value)
+    )
+  }
+  # Combina todos los dataframes de resultados individuales en una única tabla.
+  tabla_correlaciones_individuales <- do.call(rbind, resultados_individuales_lista)
+
+  # Selecciona las columnas relevantes para la matriz de correlación (TGS y todas las tomas bioquímicas).
+  columnas_para_matriz <- c(tgs_variable_nombre, nombres_bio_tomas)
+  datos_subset_matriz <- datos[, columnas_para_matriz, drop = FALSE] # Crea un subconjunto del dataframe.
+  # Filtra las filas que tienen NAs en todas las columnas del subconjunto.
+  datos_subset_matriz_completos <- datos_subset_matriz[rowSums(is.na(datos_subset_matriz)) < ncol(datos_subset_matriz), ]
+
+  matriz_cor <- NA # Inicializa la matriz de correlación como NA.
+  plot_matriz_cor <- NULL # Inicializa el objeto del plot de la matriz de correlación como NULL.
+  # Verifica si hay suficientes datos numéricos para calcular la matriz de correlación.
+  if(nrow(datos_subset_matriz_completos) >= 2 && ncol(datos_subset_matriz_completos) > 0 && all(sapply(datos_subset_matriz_completos, is.numeric))) {
+      # Calcula la matriz de correlación utilizando 'pairwise.complete.obs' para manejar NAs.
+      matriz_cor <- cor(datos_subset_matriz_completos, use = "pairwise.complete.obs")
+      # Verifica si el paquete 'ggcorrplot' está instalado para crear el gráfico.
+      if(requireNamespace("ggcorrplot", quietly = TRUE)) {
+          # Crea el gráfico de la matriz de correlación con ggcorrplot.
+           plot_matriz_cor <- ggcorrplot::ggcorrplot(matriz_cor, hc.order = TRUE, type = "lower", lab = TRUE, lab_size = 3,
+                                                     colors = c("#6D9EC1", "white", "#E46726"), # Define los colores del gradiente.
+                                                     title = paste("Matriz de Correlación:\n", tgs_variable_nombre, "&", bioquimica_base_nombre)) +
+             theme(plot.title = element_text(hjust = 0.5)) # Centra el título del gráfico.
+      } else {
+          # Advierte si 'ggcorrplot' no está instalado.
+          warning("Paquete 'ggcorrplot' no instalado. La matriz de correlación no será graficada, solo devuelta como tabla.")
+      }
+  } else {
+      # Advierte si no hay suficientes datos para calcular o graficar la matriz de correlación.
+      warning("No hay suficientes datos numéricos completos para calcular o graficar la matriz de correlación.")
+  }
+
+  # Selecciona las columnas necesarias para el gráfico de trayectorias y la detección de outliers.
+  columnas_seleccionadas_plot <- c(columna_sujeto_id, tgs_variable_nombre, nombres_bio_tomas)
+  # Transforma los datos de formato ancho a formato largo para facilitar la graficación de trayectorias.
+  datos_plot_largo <- datos %>%
+    select(all_of(columnas_seleccionadas_plot)) %>% # Selecciona las columnas especificadas.
+    pivot_longer(
+      cols = all_of(nombres_bio_tomas), # Especifica las columnas a pivotar.
+      names_to = "Toma_Nombre", # Crea una nueva columna 'Toma_Nombre' con los nombres de las columnas originales.
+      values_to = "Valor_Bioquimico" # Crea una nueva columna 'Valor_Bioquimico' con los valores.
+    ) %>%
+    # Extrae el número de la toma del nombre de la columna (ej. de "Creatina1º" a 1).
+    mutate(Toma = as.integer(gsub(paste0("^", bioquimica_base_nombre, "(\\d)º$"), "\\1", Toma_Nombre))) %>%
+    filter(!is.na(Toma)) # Elimina filas donde no se pudo extraer el número de toma.
+
+  # Verifica si se generaron datos en formato largo; si no, detiene la ejecución.
+  if(nrow(datos_plot_largo) == 0){
+      stop("No se pudieron generar datos en formato largo para el gráfico de trayectorias. Verifique los nombres de las columnas bioquímicas.")
+  }
+
+  # Crea un gráfico de líneas para mostrar las trayectorias individuales de la variable bioquímica.
+  grafico_trayectorias_individuales <- ggplot(datos_plot_largo,
+                                             aes(x = Toma,
+                                                 y = Valor_Bioquimico,
+                                                 group = .data[[columna_sujeto_id]], # Agrupa por ID de sujeto para líneas individuales.
+                                                 color = .data[[tgs_variable_nombre]])) + # Colorea las líneas según la variable TGS.
+    geom_line(alpha = 0.7) + # Añade líneas con transparencia.
+    geom_point(alpha = 0.7, size = 1.5) + # Añade puntos a las líneas con transparencia.
+    # Añade la línea de tendencia (media) en rojo y punteada.
+    stat_summary(aes(group = 1), fun = mean, geom = "line", color = "red", size = 1.2, linetype = "dashed") +
+    # Añade puntos para la media global en rojo.
+    stat_summary(aes(group = 1), fun = mean, geom = "point", color = "red", size = 2, shape = 18) +
+    scale_x_continuous(breaks = 1:6) + # Define los breaks del eje X para cada toma.
+    labs(
+      title = paste("Trayectorias de", bioquimica_base_nombre, "por Sujeto"), # Título del gráfico.
+      subtitle = paste("Coloreado por", tgs_variable_nombre, "\nLínea de tendencia roja: Media"), # Subtítulo.
+      x = "Toma (Tiempo)", # Etiqueta del eje X.
+      y = paste("Valor de", bioquimica_base_nombre), # Etiqueta del eje Y.
+      color = tgs_variable_nombre # Etiqueta de la leyenda de color.
+    ) +
+    theme_minimal() + # Aplica un tema minimalista.
+    theme(plot.title = element_text(hjust = 0.5, face = "bold"), # Centra y pone en negrita el título.
+          plot.subtitle = element_text(hjust = 0.5), # Centra el subtítulo.
+          legend.position = "bottom") # Posiciona la leyenda en la parte inferior.
+
+  # Aplica una escala de color diferente dependiendo si la variable TGS es numérica o no.
+  if (!is.numeric(datos_plot_largo[[tgs_variable_nombre]])) {
+    grafico_trayectorias_individuales <- grafico_trayectorias_individuales +
+      scale_color_brewer(palette = "Set1") # Usa una paleta de colores cualitativa.
+  } else {
+    grafico_trayectorias_individuales <- grafico_trayectorias_individuales +
+      scale_color_viridis_c() # Usa una escala de color continua (viridis).
+  }
+
+  # Calcula los cuartiles, IQR y límites para la detección de outliers por toma.
+  tabla_outliers <- datos_plot_largo %>%
+    group_by(Toma) %>% # Agrupa los datos por 'Toma'.
+    mutate(
+      Q1 = quantile(Valor_Bioquimico, 0.25, na.rm = TRUE), # Calcula el primer cuartil.
+      Q3 = quantile(Valor_Bioquimico, 0.75, na.rm = TRUE), # Calcula el tercer cuartil.
+      IQR_val = Q3 - Q1, # Calcula el rango intercuartílico (IQR).
+      Limite_Inferior = Q1 - 1.5 * IQR_val, # Calcula el límite inferior para outliers.
+      Limite_Superior = Q3 + 1.5 * IQR_val, # Calcula el límite superior para outliers.
+      Es_Outlier = Valor_Bioquimico < Limite_Inferior | Valor_Bioquimico > Limite_Superior, # Marca si el valor es un outlier.
+      Tipo_Outlier = case_when( # Clasifica el tipo de outlier (bajo o alto).
+        Valor_Bioquimico < Limite_Inferior ~ "Bajo",
+        Valor_Bioquimico > Limite_Superior ~ "Alto",
+        TRUE ~ "Normal"
+      )
+    ) %>%
+    filter(Es_Outlier) %>% # Filtra solo las filas que son outliers.
+    select(all_of(columna_sujeto_id), Toma, Toma_Nombre, Valor_Bioquimico, Tipo_Outlier, Limite_Inferior, Limite_Superior) %>% # Selecciona columnas relevantes.
+    arrange(Toma, .data[[columna_sujeto_id]]) # Ordena los resultados.
+
+  # Inicializa una lista para almacenar los gráficos de curvas ROC.
+  lista_curvas_roc <- list()
+  # Itera sobre cada fila de la tabla de correlaciones individuales.
+  for (i in 1:nrow(tabla_correlaciones_individuales)) {
+    corr_row <- tabla_correlaciones_individuales[i, ] # Obtiene la fila actual de correlación.
+    p_valor <- corr_row$P_Valor # Obtiene el p-valor de la correlación.
+    col_bio_actual <- corr_row$Variable_Bioquimica_Toma # Obtiene el nombre de la variable bioquímica.
+
+    # Verifica si el p-valor es significativo (< 0.05) y si hay suficientes datos no nulos.
+    if (!is.na(p_valor) && p_valor < 0.05 &&
+        !is.null(datos[[tgs_variable_nombre]]) && !is.null(datos[[col_bio_actual]]) &&
+        sum(!is.na(datos[[tgs_variable_nombre]]) & !is.na(datos[[col_bio_actual]])) > 1) {
+
+      # Para la curva ROC, se necesita una variable binaria como "respuesta".
+      # Aquí, se binariza la variable TGS% usando la mediana como umbral.
+      # Se asume que un TGS% por encima de la mediana representa un "evento" o "estado positivo".
+      tgs_binario <- as.factor(datos[[tgs_variable_nombre]] > median(datos[[tgs_variable_nombre]], na.rm = TRUE))
+
+      # Asegura que la variable binaria tenga al menos dos niveles (TRUE/FALSE).
+      if (nlevels(tgs_binario) < 2) {
+        warning(paste("No se puede generar curva ROC para", col_bio_actual,
+                      "porque la variable TGS binaria solo tiene un nivel. Ajuste el umbral de TGS%."))
+        next # Pasa a la siguiente iteración del bucle.
+      }
+
+      # Crea un dataframe limpio con la respuesta binaria y el predictor bioquímico.
+      roc_data <- data.frame(
+        response = tgs_binario,
+        predictor = datos[[col_bio_actual]]
+      )
+      roc_data <- na.omit(roc_data) # Elimina filas con NAs para el cálculo de ROC.
+
+      # Verifica que haya suficientes datos y dos clases en la variable de respuesta.
+      if (nrow(roc_data) > 1 && nlevels(roc_data$response) == 2) {
+        tryCatch({
+          # Crea el objeto ROC. 'levels = rev(levels(...))' asegura que el "positivo" sea el segundo nivel.
+          roc_obj <- roc(response = roc_data$response,
+                         predictor = roc_data$predictor,
+                         levels = rev(levels(roc_data$response)))
+          
+          # Crea el gráfico de la curva ROC usando ggroc.
+          plot_roc <- ggroc(roc_obj) +
+            geom_segment(aes(x = 0, xend = 1, y = 0, yend = 1), color = "darkgrey", linetype = "dashed") + # Añade línea de referencia.
+            labs(title = paste("Curva ROC para", col_bio_actual, "prediciendo", tgs_variable_nombre,
+                               "\n(AU ROC:", round(auc(roc_obj), 2), ")"), # Título con el área bajo la curva (AUC).
+                 x = "False Positive Rate", # Etiqueta del eje X.
+                 y = "True Positive Rate") + # Etiqueta del eje Y.
+            theme_minimal() + # Aplica un tema minimalista.
+            theme(plot.title = element_text(hjust = 0.5, face = "bold")) # Centra y pone en negrita el título.
+
+          # Almacena el gráfico ROC en la lista con el nombre de la variable bioquímica.
+          lista_curvas_roc[[col_bio_actual]] <- plot_roc
+
+        }, error = function(e) {
+          # Captura y advierte sobre errores al generar la curva ROC.
+          warning(paste("Error al generar la curva ROC para", col_bio_actual, ":", e$message))
+        })
+      } else {
+          # Advierte si no hay suficientes datos o niveles para la curva ROC.
+          warning(paste("No hay suficientes datos para generar curva ROC para", col_bio_actual,
+                        "o la variable binaria no tiene dos niveles después de NA o umbral."))
+      }
+    }
+  }
+
+  # Retorna una lista que contiene todos los resultados generados por la función.
+  return(list(
+    tabla_correlaciones_individuales = tabla_correlaciones_individuales, # Tabla con las correlaciones individuales.
+    matriz_correlacion_completa = matriz_cor, # La matriz de correlación completa.
+    plot_matriz_correlacion = plot_matriz_cor, # El gráfico de la matriz de correlación.
+    grafico_trayectorias_individuales = grafico_trayectorias_individuales, # El gráfico de trayectorias individuales.
+    tabla_outliers = tabla_outliers, # La tabla de detección de outliers.
+    curvas_roc_significativas = lista_curvas_roc # Lista de gráficos ROC para correlaciones significativas.
+  ))
+}
+```
+
+
+EJECUTAR FUNCIÓN CORRELACIÓN TGS MUSCULAR Y VARIABELS
+```{r}
+# Define la variable TGS (Total Glycogen Stores) que se usará de forma constante en todos los análisis.
+tgs_fija <- "%TGS muscular"
+
+# Crea un vector de caracteres con los nombres base de las variables bioquímicas a analizar.
+# La función 'analizar_bio_tgs_jugador' construirá los nombres completos (ej., "FERRIT1º", "FERRIT2º") a partir de estos.
+variables_bioquimicas_a_iterar <- c("FERRIT", "FE", "CPK", "LDH", "CREATIN")
+
+# Inicia un bucle que aplica una función a cada elemento de 'variables_bioquimicas_a_iterar'.
+# 'lapply' devolverá una lista donde cada elemento es el resultado de la función aplicada a una variable bioquímica.
+# Esta lista contendrá todos los resultados de los análisis.
+todos_los_analisis <- lapply(variables_bioquimicas_a_iterar, function(nombre_base_bio) {
+
+  # Imprime un mensaje en la consola para indicar el inicio del análisis para la variable bioquímica actual.
+  cat(paste0("\n--- Iniciando análisis para: TGS='", tgs_fija, "' y Bioquímica Base='", nombre_base_bio, "' ---\n"))
+
+  # Usa 'tryCatch' para manejar posibles errores durante la ejecución de 'analizar_bio_tgs_jugador'.
+  # Si ocurre un error con una variable, se registrará el error y el bucle continuará con la siguiente variable.
+  resultado_para_esta_bio <- tryCatch({
+    # Llama a la función principal 'analizar_bio_tgs_jugador' con los parámetros definidos.
+    # 'datos' es el dataframe completo, "SUJETO" es la columna de ID, 'tgs_fija' es la variable TGS constante,
+    # y 'nombre_base_bio' es la variable bioquímica actual del bucle.
+    analizar_bio_tgs_jugador(
+      datos = datos,
+      columna_sujeto_id = "SUJETO",
+      tgs_variable_nombre = tgs_fija,
+      bioquimica_base_nombre = nombre_base_bio
+    )
+  }, error = function(e) {
+    # Si 'analizar_bio_tgs_jugador' arroja un error, este bloque captura el error.
+    # Se imprime un mensaje de error detallado en la consola.
+    cat(paste0("ERROR al procesar '", nombre_base_bio, "': ", e$message, "\n"))
+    # Devuelve una lista indicando que hubo un error, incluyendo el mensaje de error y la variable que lo causó.
+    return(list(error = TRUE, mensaje_error = e$message, variable_bio = nombre_base_bio))
+  })
+
+  # Retorna el resultado del análisis (o el mensaje de error si lo hubo) para la variable bioquímica actual.
+  # Este resultado se añadirá como un elemento a la lista 'todos_los_analisis'.
+  return(resultado_para_esta_bio)
+})
+
+# Asigna los nombres de las variables bioquímicas a cada elemento de la lista 'todos_los_analisis'.
+# Esto permite acceder a los resultados de un análisis específico usando el nombre de la variable (ej., 'todos_los_analisis$FERRIT').
+names(todos_los_analisis) <- variables_bioquimicas_a_iterar
+```
+
+Resultados Ferritina
+```{r}
+todos_los_analisis$FERRIT #Permite acceder a los resultados del análisis específico para la variable bioquímica "FERRIT"
+```
+
+Resultados Fe
+```{r}
+todos_los_analisis$FE #Permite acceder a los resultados del análisis específico para la variable bioquímica "FE"
+```
+
+
+Resultados CPK
+```{r}
+todos_los_analisis$CPK #Permite acceder a los resultados del análisis específico para la variable bioquímica "CPK"
+```
+
+Resultados LDH
+```{r}
+todos_los_analisis$LDH #Permite acceder a los resultados del análisis específico para la variable bioquímica "LDH"
+```
+
+Resultados Creatina
+```{r}
+todos_los_analisis$CREATIN #Permite acceder a los resultados del análisis específico para la variable bioquímica "CREATIN"
+```
+
+EJECUTAR FUNCIÓN CORRELACIÓN TGS HEPÁTICO Y VARIABELS
+```{r}
+# Define la variable TGS (Total Glycogen Stores) que se utilizará de forma constante en todos los análisis.
+tgs_fija <- "%TGS hepático"
+
+# Crea un vector de caracteres con los nombres base de las variables bioquímicas a analizar.
+# La función 'analizar_bio_tgs_jugador' construirá los nombres completos (ej., "GOT1º", "GOT2º") a partir de estos.
+variables_bioquimicas_a_iterar <- c("GOT", "GPT", "GGT", "UREA", "BUN")
+
+# Inicia un bucle que aplica una función a cada elemento de 'variables_bioquimicas_a_iterar'.
+# 'lapply' devolverá una lista donde cada elemento será el resultado de la función aplicada a una variable bioquímica.
+# Esta lista, 'todos_los_analisis2', almacenará todos los resultados de los análisis.
+todos_los_analisis2 <- lapply(variables_bioquimicas_a_iterar, function(nombre_base_bio) {
+
+  # Imprime un mensaje en la consola para indicar el inicio del análisis para la variable bioquímica actual.
+  cat(paste0("\n--- Iniciando análisis para: TGS='", tgs_fija, "' y Bioquímica Base='", nombre_base_bio, "' ---\n"))
+
+  # Usa 'tryCatch' para manejar posibles errores durante la ejecución de 'analizar_bio_tgs_jugador'.
+  # Si ocurre un error con una variable, se registrará el error y el bucle continuará con la siguiente.
+  resultado_para_esta_bio <- tryCatch({
+    # Llama a la función 'analizar_bio_tgs_jugador' con los parámetros definidos.
+    # 'datos' es el dataframe completo, "SUJETO" es la columna de ID, 'tgs_fija' es la variable TGS constante,
+    # y 'nombre_base_bio' es la variable bioquímica actual del bucle.
+    analizar_bio_tgs_jugador(
+      datos = datos,
+      columna_sujeto_id = "SUJETO",
+      tgs_variable_nombre = tgs_fija,
+      bioquimica_base_nombre = nombre_base_bio
+    )
+  }, error = function(e) {
+    # Si 'analizar_bio_tgs_jugador' arroja un error, este bloque lo captura.
+    # Se imprime un mensaje de error detallado en la consola.
+    cat(paste0("ERROR al procesar '", nombre_base_bio, "': ", e$message, "\n"))
+    # Devuelve una lista indicando que hubo un error, incluyendo el mensaje de error y la variable que lo causó.
+    return(list(error = TRUE, mensaje_error = e$message, variable_bio = nombre_base_bio))
+  })
+
+  # Retorna el resultado del análisis (o el mensaje de error si lo hubo) para la variable bioquímica actual.
+  # Este resultado se añadirá como un elemento a la lista 'todos_los_analisis2'.
+  return(resultado_para_esta_bio)
+})
+
+# Asigna los nombres de las variables bioquímicas a cada elemento de la lista 'todos_los_analisis2'.
+# Esto permite acceder a los resultados de un análisis específico usando el nombre de la variable (ej., 'todos_los_analisis2$GOT').
+names(todos_los_analisis2) <- variables_bioquimicas_a_iterar
+```
+
+Resultados GOT
+```{r}
+todos_los_analisis2$GOT #Permite acceder a los resultados del análisis específico para la variable bioquímica "GOT"
+```
+
+Resultados GPT
+```{r}
+todos_los_analisis2$GPT #Permite acceder a los resultados del análisis específico para la variable bioquímica "GPT"
+```
+
+Resultados GGT
+```{r}
+todos_los_analisis2$GGT #Permite acceder a los resultados del análisis específico para la variable bioquímica "GGT"
+```
+
+Resultados UREA
+```{r}
+todos_los_analisis2$UREA #Permite acceder a los resultados del análisis específico para la variable bioquímica "UREA"
+```
+
+Resultados BUN
+```{r}
+todos_los_analisis2$BUN #Permite acceder a los resultados del análisis específico para la variable bioquímica "BUN"
+```
+
+EJECUTAR FUNCIÓN CORRELACIÓN TGS CARDIO Y VARIABELS
+```{r}
+# Define la variable TGS (Total Glycogen Stores) que se utilizará de forma constante en este análisis.
+tgs_fija <- "%TGS cardio"
+
+# Crea un vector de caracteres con los nombres base de las variables bioquímicas a analizar.
+# En este caso, solo se incluye "CPK". La función 'analizar_bio_tgs_jugador' construirá los nombres completos (ej., "CPK1º", "CPK2º") a partir de este.
+variables_bioquimicas_a_iterar <- c("CPK")
+
+# Inicia un bucle que aplica una función a cada elemento de 'variables_bioquimicas_a_iterar'.
+# 'lapply' devolverá una lista donde cada elemento será el resultado de la función aplicada a una variable bioquímica.
+# Esta lista, 'todos_los_analisis2', almacenará los resultados de los análisis.
+todos_los_analisis2 <- lapply(variables_bioquimicas_a_iterar, function(nombre_base_bio) {
+
+  # Imprime un mensaje en la consola para indicar el inicio del análisis para la variable bioquímica actual.
+  cat(paste0("\n--- Iniciando análisis para: TGS='", tgs_fija, "' y Bioquímica Base='", nombre_base_bio, "' ---\n"))
+
+  # Usa 'tryCatch' para manejar posibles errores durante la ejecución de 'analizar_bio_tgs_jugador'.
+  # Si ocurre un error con una variable, se registrará el error y el bucle continuará con la siguiente (aunque aquí solo hay una).
+  resultado_para_esta_bio <- tryCatch({
+    # Llama a la función 'analizar_bio_tgs_jugador' con los parámetros definidos.
+    # 'datos' es el dataframe completo, "SUJETO" es la columna de ID, 'tgs_fija' es la variable TGS constante,
+    # y 'nombre_base_bio' es la variable bioquímica actual del bucle.
+    analizar_bio_tgs_jugador(
+      datos = datos,
+      columna_sujeto_id = "SUJETO",
+      tgs_variable_nombre = tgs_fija,
+      bioquimica_base_nombre = nombre_base_bio
+    )
+  }, error = function(e) {
+    # Si 'analizar_bio_tgs_jugador' arroja un error, este bloque lo captura.
+    # Se imprime un mensaje de error detallado en la consola.
+    cat(paste0("ERROR al procesar '", nombre_base_bio, "': ", e$message, "\n"))
+    # Devuelve una lista indicando que hubo un error, incluyendo el mensaje de error y la variable que lo causó.
+    return(list(error = TRUE, mensaje_error = e$message, variable_bio = nombre_base_bio))
+  })
+
+  # Retorna el resultado del análisis (o el mensaje de error si lo hubo) para la variable bioquímica actual.
+  # Este resultado se añadirá como un elemento a la lista 'todos_los_analisis2'.
+  return(resultado_para_esta_bio)
+})
+
+# Asigna los nombres de las variables bioquímicas a cada elemento de la lista 'todos_los_analisis2'.
+# Esto permite acceder a los resultados del análisis específico usando el nombre de la variable (ej., 'todos_los_analisis2$CPK').
+names(todos_los_analisis2) <- variables_bioquimicas_a_iterar
+```
+
+Resultados CPK
+```{r}
+todos_los_analisis2$CPK #Permite acceder a los resultados del análisis específico para la variable bioquímica "CPK"
+```
+
+EJECUTAR FUNCIÓN CORRELACIÓN TGS EFICACIA Y VARIABELS
+```{r}
+# Define la variable TGS (Total Glycogen Stores) que se utilizará de forma constante en este conjunto de análisis.
+tgs_fija <- "%TGS eficacia"
+
+# Crea un vector de caracteres con los nombres base de las variables bioquímicas a analizar.
+# La función 'analizar_bio_tgs_jugador' construirá los nombres completos de las columnas (ej., "GOT1º", "GOT2º") a partir de estos nombres base.
+variables_bioquimicas_a_iterar <- c("GOT", "GPT", "GGT", "CPK", "FE", "FERRIT", "HMTCO", "HB", "HEMAT")
+
+# Inicia un bucle que aplica una función a cada elemento del vector 'variables_bioquimicas_a_iterar'.
+# La función 'lapply' devolverá una lista donde cada elemento será el resultado de la función aplicada a una de las variables bioquímicas.
+# Esta lista, 'todos_los_analisis2', almacenará todos los resultados generados por cada análisis individual.
+todos_los_analisis2 <- lapply(variables_bioquimicas_a_iterar, function(nombre_base_bio) {
+
+  # Imprime un mensaje en la consola para indicar claramente qué análisis está a punto de comenzar.
+  # Esto es útil para el seguimiento durante la ejecución del script.
+  cat(paste0("\n--- Iniciando análisis para: TGS='", tgs_fija, "' y Bioquímica Base='", nombre_base_bio, "' ---\n"))
+
+  # Utiliza 'tryCatch' para gestionar posibles errores que puedan surgir durante la ejecución de 'analizar_bio_tgs_jugador'.
+  # Si se produce un error con una variable específica, este bloque lo captura, evita que el script se detenga por completo
+  # y permite que el bucle continúe con las variables restantes.
+  resultado_para_esta_bio <- tryCatch({
+    # Llama a la función 'analizar_bio_tgs_jugador' con los parámetros necesarios:
+    # - 'datos': el dataframe completo que contiene toda la información.
+    # - 'columna_sujeto_id': el nombre de la columna que identifica de forma única a cada sujeto ("SUJETO").
+    # - 'tgs_variable_nombre': la variable TGS fija que se está analizando en esta serie de comparaciones.
+    # - 'bioquimica_base_nombre': el nombre base de la variable bioquímica actual que se procesa en la iteración del bucle.
+    analizar_bio_tgs_jugador(
+      datos = datos,
+      columna_sujeto_id = "SUJETO",
+      tgs_variable_nombre = tgs_fija,
+      bioquimica_base_nombre = nombre_base_bio
+    )
+  }, error = function(e) {
+    # Si la función 'analizar_bio_tgs_jugador' genera un error, este bloque se activa.
+    # Se imprime un mensaje de advertencia detallado en la consola, indicando qué variable causó el error y el mensaje específico del error.
+    cat(paste0("ERROR al procesar '", nombre_base_bio, "': ", e$message, "\n"))
+    # Devuelve una lista que contiene indicadores de error (TRUE), el mensaje de error y el nombre de la variable bioquímica.
+    # Esto permite identificar fácilmente qué análisis fallaron y por qué.
+    return(list(error = TRUE, mensaje_error = e$message, variable_bio = nombre_base_bio))
+  })
+
+  # Retorna el resultado del análisis para la variable bioquímica actual.
+  # Si el análisis fue exitoso, será la lista completa de resultados; de lo contrario, será la lista con el mensaje de error.
+  # Este resultado se añade como un elemento a la lista 'todos_los_analisis2'.
+  return(resultado_para_esta_bio)
+})
+
+# Asigna los nombres de las variables bioquímicas (ej., "GOT", "GPT") a cada elemento de la lista 'todos_los_analisis2'.
+# Esto mejora la legibilidad y facilita el acceso a los resultados de un análisis específico utilizando el nombre de la variable
+# (por ejemplo, `todos_los_analisis2$GOT` para acceder a los resultados relacionados con GOT).
+names(todos_los_analisis2) <- variables_bioquimicas_a_iterar
+```
+
+Resultados GOT
+```{r}
+todos_los_analisis2$GOT #Permite acceder a los resultados del análisis específico para la variable bioquímica "GOT"
+```
+
+Resultados GPT
+```{r}
+todos_los_analisis2$GPT #Permite acceder a los resultados del análisis específico para la variable bioquímica "GPT"
+```
+
+Resultados GGT
+```{r}
+todos_los_analisis2$GGT #Permite acceder a los resultados del análisis específico para la variable bioquímica "GGT"
+```
+
+Resultados CPK
+```{r}
+todos_los_analisis2$CPK #Permite acceder a los resultados del análisis específico para la variable bioquímica "CPK"
+```
+
+Resultados FE
+```{r}
+todos_los_analisis2$FE #Permite acceder a los resultados del análisis específico para la variable bioquímica "FE"
+```
+
+Resultados FERRITINA
+```{r}
+todos_los_analisis2$FERRIT #Permite acceder a los resultados del análisis específico para la variable bioquímica "FERRIT"
+```
+
+Resultados HMTCO
+```{r}
+todos_los_analisis2$HMTCO #Permite acceder a los resultados del análisis específico para la variable bioquímica "HMTCO"
+```
+
+Resultados HB
+```{r}
+todos_los_analisis2$HB #Permite acceder a los resultados del análisis específico para la variable bioquímica "HB"
+```
+
+Resultados HEMAT
+```{r}
+todos_los_analisis2$HEMAT #Permite acceder a los resultados del análisis específico para la variable bioquímica "HEMAT"
+```
