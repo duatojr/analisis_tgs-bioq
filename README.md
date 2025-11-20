@@ -53,6 +53,7 @@ El análisis de este estudio se llevó a cabo utilizando los siguientes paquetes
   * `plotly`: Para gráficos interactivos.
   * `ggcorrplot`: Para visualizar matrices de correlación con `ggplot2`.
   * `pROC`: Para generar y analizar curvas ROC.
+  * `car`: Para hacer el test de Levene
 
 Asegúrate de tener estos paquetes instalados en tu entorno de R. Puedes instalarlos usando `install.packages("nombre_del_paquete")`.
 
