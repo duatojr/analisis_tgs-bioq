@@ -59,7 +59,7 @@ Asegúrate de tener estos paquetes instalados en tu entorno de R. Puedes instala
 
 Versión de R
 
-La versión de R empleada es R 4.4.3; mientras que la versión de RStudio utilizada es 2025.05.0+496
+La versión de R empleada es R 4.4.3; mientras que la versión de RStudio utilizada es 2025.09.2+418 
 
 Resumen del Código (`analisis_tgs-bioq.Rmd`)
 
